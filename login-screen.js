@@ -20,12 +20,15 @@ function LoginScreen({ navigation }) {
   const handleSignIn = async () => {
     setError(null);
     setLoading(true);
-    const res = await login({ username: email, password });
+    const res = await login({ email: email.trim(), password });
     setLoading(false);
     if (res && res.ok) {
-      navigation.reset({ index: 0, routes: [{ name: "Main", params: { initialTab: "Home" } }] });
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Main", params: { initialTab: "Home" } }],
+      });
     } else {
-      setError(res && res.error ? res.error : 'Login failed');
+      setError(res && res.error ? res.error : "Login failed");
     }
   };
 
@@ -37,7 +40,14 @@ function LoginScreen({ navigation }) {
       </View>
       <View style={styles.form}>
         <Text style={styles.label}>Email</Text>
-        <TextInput style={styles.textInputZone} placeholder="test@mail.com" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+        <TextInput
+          style={styles.textInputZone}
+          placeholder="test@mail.com"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
         <Text style={styles.label}>Password</Text>
         <TextInput
           style={styles.textInputZone}
@@ -56,8 +66,16 @@ function LoginScreen({ navigation }) {
           </TouchableOpacity>
         </View>
       </View>
-      <TouchableOpacity onPress={handleSignIn} style={[styles.button]} disabled={loading || authLoading}>
-        {loading || authLoading ? <ActivityIndicator /> : <Text style={[styles.buttonText]}>Sign In</Text>}
+      <TouchableOpacity
+        onPress={handleSignIn}
+        style={[styles.button]}
+        disabled={loading || authLoading}
+      >
+        {loading || authLoading ? (
+          <ActivityIndicator />
+        ) : (
+          <Text style={[styles.buttonText]}>Sign In</Text>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -120,5 +138,5 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   buttonText: { fontSize: 16, fontWeight: "600" },
-  errorText: { color: 'red', marginTop: 8 },
+  errorText: { color: "red", marginTop: 8 },
 });

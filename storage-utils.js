@@ -9,33 +9,47 @@ const KEYS = {
 /**
  * Try to authenticate using locally-saved profile.
  * NOTE: This is a local/demo check. For real apps call your backend.
- * @param {{username:string,password:string}} creds
- * @returns {{success:boolean,user?:object,error?:string}}
+ * @param {{email:string,password:string}} creds
+ * @returns {{ok:boolean,user?:object,error?:string}}
  */
 export async function loginCheck(creds) {
   try {
-    // Basic input validation
-    if (!creds || !creds.username || !creds.password) {
-      return { ok: false, error: "Username and password are required" };
-    }
-    const username = String(creds.username).trim();
-    const password = String(creds.password).trim();
-    if (!username || !password) {
-      return { ok: false, error: "Username and password are required" };
+    if (!creds || !creds.email || !creds.password) {
+      return { ok: false, error: "Email and password are required" };
     }
 
-    const s = await AsyncStorage.getItem(KEYS.PROFILE);
-    if (!s) return { ok: false, error: "No local profile found" };
-    const profile = JSON.parse(s);
-    if (profile.username === username && profile.password === password) {
+    const profile = await getProfile();
+    if (!profile) return { ok: false, error: "No local profile found" };
+
+    // Simple direct comparison as requested
+    // Debug logging in dev to help trace form/storage mismatches
+    if (__DEV__) {
+      try {
+        // avoid printing passwords in logs; only indicate whether they match
+        const pwMatch = profile.password === creds.password;
+        console.debug(
+          "[loginCheck] creds.email=",
+          creds.email,
+          "stored=",
+          profile.email,
+          "pwMatch=",
+          pwMatch,
+        );
+      } catch (e) {
+        console.debug("[loginCheck] debug error", e);
+      }
+    }
+
+    if (creds.email === profile.email && creds.password === profile.password) {
       const user = {
-        username: profile.username,
+        email: profile.email,
         name: profile.name || "",
         loggedAt: Date.now(),
       };
       await AsyncStorage.setItem(KEYS.USER, JSON.stringify(user));
       return { ok: true, user };
     }
+
     return { ok: false, error: "Invalid credentials" };
   } catch (e) {
     console.error("loginCheck error", e);
@@ -56,7 +70,10 @@ export async function loadUser() {
 export async function getProfile() {
   try {
     const s = await AsyncStorage.getItem(KEYS.PROFILE);
-    return s ? JSON.parse(s) : null;
+    if (!s) return null;
+    const obj = JSON.parse(s);
+    if (Array.isArray(obj)) return obj[0] || null;
+    return obj;
   } catch (e) {
     console.error("getProfile error", e);
     return null;
@@ -69,34 +86,37 @@ export async function getProfile() {
  */
 export async function saveProfile(profile) {
   try {
-    // Basic validation
-    if (!profile || !profile.username || !profile.password) {
-      return { ok: false, error: "Username and password are required" };
+    if (!profile || !profile.email || !profile.password) {
+      return { ok: false, error: "Email and password are required" };
     }
     if (typeof profile.password === "string" && profile.password.length < 4) {
       return { ok: false, error: "Password must be at least 4 characters" };
     }
+
+    // basic email format check (optional)
     if (profile.email && !/^\S+@\S+\.\S+$/.test(profile.email)) {
       return { ok: false, error: "Invalid email format" };
     }
 
-    // Duplicate check for single-profile demo storage
+    // handle existing stored profile (object or array)
     const existingRaw = await AsyncStorage.getItem(KEYS.PROFILE);
     if (existingRaw) {
       try {
         const existing = JSON.parse(existingRaw);
-        if (existing && existing.username === profile.username) {
-          return { ok: false, error: "Username already taken" };
+        const existingEmail = Array.isArray(existing)
+          ? existing[0] && existing[0].email
+          : existing.email;
+        if (existingEmail && existingEmail === profile.email) {
+          return { ok: false, error: "Email already taken" };
         }
       } catch (e) {
-        // ignore parse errors and continue to overwrite
+        // ignore parse errors
       }
     }
 
     await AsyncStorage.setItem(KEYS.PROFILE, JSON.stringify(profile));
-    // also update current user minimal info
     const user = {
-      username: profile.username,
+      email: profile.email,
       name: profile.name || "",
       loggedAt: Date.now(),
     };
@@ -126,8 +146,10 @@ export async function savePost(post) {
   try {
     const list = await getPosts();
     const newPost = { id: post.id || Date.now().toString(), ...post };
-    list.unshift(newPost);
-    await AsyncStorage.setItem(KEYS.POSTS, JSON.stringify(list));
+    // remove any existing post with same id to avoid duplicate keys
+    const filtered = list.filter((p) => p.id !== newPost.id);
+    filtered.unshift(newPost);
+    await AsyncStorage.setItem(KEYS.POSTS, JSON.stringify(filtered));
     return newPost;
   } catch (e) {
     console.error("savePost error", e);

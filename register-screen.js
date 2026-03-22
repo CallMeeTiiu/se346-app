@@ -36,8 +36,12 @@ const RegisterScreen = ({ navigation }) => {
 
     (async () => {
       setLoading(true);
-      // Use email as username
-      const profile = { username: email, email, name, password };
+      // Trim inputs and store profile with email (no username field)
+      const profile = {
+        email: String(email).trim(),
+        name: String(name).trim(),
+        password,
+      };
       const res = await register(profile);
       setLoading(false);
       if (res && res.ok) {

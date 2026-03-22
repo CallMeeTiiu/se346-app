@@ -14,30 +14,22 @@ import {
 import { useProfile } from "./profile-context";
 
 export default function ProfileScreen({ navigation }) {
-  const { profile, setProfile } = useProfile();
+  const { profile, setProfile, hydrated } = useProfile();
 
   function handleSave() {
+    // setProfile persists via ProfileProvider
+    setProfile(profile);
     Alert.alert("Profile", "Profile saved.");
-    console.log(profile);
-  }
-
-  function handleLogout() {
-    // clear session
-    setProfile(null);
-    // reset navigation stack so Login is the only route
-    navigation.reset({ index: 0, routes: [{ name: "Login" }] });
   }
 
   useEffect(() => {
-    // protect this screen: if session missing, send to Login
-    if (!profile || !profile.email) {
+    // protect this screen: wait for profile hydration first
+    if (hydrated && (!profile || !profile.email)) {
       navigation.replace("Login");
     }
   }, [profile]);
 
-  if (!profile) {
-    return null; // Don't render if profile is null to prevent errors during navigation
-  }
+  if (!profile) return null;
 
   return (
     <KeyboardAvoidingView
@@ -101,12 +93,7 @@ export default function ProfileScreen({ navigation }) {
           >
             <Text style={styles.buttonText}>Save</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.button, styles.logoutButton]}
-            onPress={handleLogout}
-          >
-            <Text style={styles.buttonText}>Logout</Text>
-          </TouchableOpacity>
+          {/* Logout removed per request */}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

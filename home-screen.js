@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useContext } from "react";
 import {
   View,
   Text,
@@ -27,20 +27,19 @@ function randomSentence() {
   return samples[Math.floor(Math.random() * samples.length)];
 }
 
+import { PostsContext } from "./contexts/PostsContext";
+import { AuthContext } from "./contexts/AuthContext";
+import { useProfile } from "./profile-context";
+
 export default function HomeScreen() {
-  const [posts, setPosts] = useState(() => {
-    return Array.from({ length: 10 }).map((_, i) => ({
-      id: String(i + 1),
-      author: `User ${i + 1}`,
-      avatar: `https://i.pravatar.cc/150?img=${i + 10}`,
-      text: randomSentence(),
-      // random timestamp within last 7 days
-      time: Date.now() - Math.floor(Math.random() * 7 * 24 * 60 * 60 * 1000),
-    }));
-  });
+  const { posts, loading, addPost } = useContext(PostsContext);
+  const { user } = useContext(AuthContext);
+  const { profile } = useProfile();
+  // local modal state only
 
   const [modalVisible, setModalVisible] = useState(false);
-  const [postText, setPostText] = useState("");
+  const [postTitle, setPostTitle] = useState("");
+  const [postBody, setPostBody] = useState("");
 
   function timeAgo(ts) {
     const diff = Math.floor((Date.now() - ts) / 1000);
@@ -54,21 +53,34 @@ export default function HomeScreen() {
     setModalVisible(true);
   }
 
-  function submitPost() {
-    const text = postText.trim();
-    if (!text) {
-      Alert.alert("Empty", "Please enter some text for your post.");
+  async function submitPost() {
+    const title = postTitle.trim();
+    const body = postBody.trim();
+    if (!title) {
+      Alert.alert("Empty", "Please enter a title for your post.");
       return;
     }
+    if (!body) {
+      Alert.alert("Empty", "Please enter content for your post.");
+      return;
+    }
+    const authorName = (user && (user.name || user.email)) || "You";
+    const avatarUrl =
+      profile && profile.avatarUrl
+        ? profile.avatarUrl
+        : `https://ui-avatars.com/api/?name=${encodeURIComponent(
+            authorName,
+          )}&background=ffffff&color=666&rounded=true&size=128`;
     const newPost = {
-      id: Date.now().toString(),
-      author: "You",
-      avatar: `https://i.pravatar.cc/150?img=1`,
-      text,
+      author: authorName,
+      avatar: avatarUrl,
+      title,
+      body,
       time: Date.now(),
     };
-    setPosts((prev) => [newPost, ...prev]);
-    setPostText("");
+    await addPost(newPost);
+    setPostTitle("");
+    setPostBody("");
     setModalVisible(false);
   }
 
@@ -81,13 +93,31 @@ export default function HomeScreen() {
         style={{ width: "100%" }}
         renderItem={({ item, index }) => (
           <View style={[styles.card, index === 0 && styles.highlightCard]}>
-            <Image source={{ uri: item.avatar }} style={styles.avatar} />
+            {/* Prefer post avatar; if missing, if this post is by current user use profile avatar; otherwise generate initials avatar */}
+            {(() => {
+              const byCurrent =
+                user && item.author === (user.name || user.email);
+              const uri =
+                item.avatar ||
+                (byCurrent && profile && profile.avatarUrl) ||
+                `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                  item.author || "User",
+                )}&background=ffffff&color=666&rounded=true&size=128`;
+              return <Image source={{ uri }} style={styles.avatar} />;
+            })()}
             <View style={styles.postBody}>
               <View style={styles.metaRow}>
                 <Text style={styles.author}>{item.author}</Text>
                 <Text style={styles.time}>{timeAgo(item.time)}</Text>
               </View>
-              <Text style={styles.content}>{item.text}</Text>
+              {item.title ? (
+                <Text style={[styles.content, { fontWeight: "700" }]}>
+                  {item.title}
+                </Text>
+              ) : null}
+              {item.body ? (
+                <Text style={styles.content}>{item.body}</Text>
+              ) : null}
             </View>
           </View>
         )}
@@ -103,10 +133,16 @@ export default function HomeScreen() {
           <View style={styles.modalContent}>
             <Text style={{ fontWeight: "700", marginBottom: 8 }}>New Post</Text>
             <TextInput
+              placeholder="Title"
+              value={postTitle}
+              onChangeText={setPostTitle}
+              style={[styles.input, { minHeight: 40 }]}
+            />
+            <TextInput
               multiline
-              placeholder="What's on your mind?"
-              value={postText}
-              onChangeText={setPostText}
+              placeholder="Write your post content..."
+              value={postBody}
+              onChangeText={setPostBody}
               style={styles.input}
             />
             <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
