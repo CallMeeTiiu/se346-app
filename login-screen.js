@@ -29,12 +29,17 @@ function LoginScreen({ navigation }) {
             <Text style={styles.forgot}>Forgot Password?</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => navigation.navigate("Register")}>
-            <Text style={styles.forgot}>Don't have an account? Sign Up</Text>
+            <Text style={styles.forgot}>Register</Text>
           </TouchableOpacity>
         </View>
       </View>
       <TouchableOpacity
-        onPress={() => navigation.navigate("Profile")}
+        onPress={() =>
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "Main", params: { initialTab: "Home" } }],
+          })
+        }
         style={[styles.button]}
       >
         <Text style={[styles.buttonText]}>Sign In</Text>
