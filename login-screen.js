@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useContext } from "react";
 import { StatusBar } from "expo-status-bar";
 import {
   StyleSheet,
@@ -6,9 +6,29 @@ import {
   View,
   TextInput,
   TouchableOpacity,
+  ActivityIndicator,
 } from "react-native";
+import { AuthContext } from "./contexts/AuthContext";
 
 function LoginScreen({ navigation }) {
+  const { login, loading: authLoading } = useContext(AuthContext);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleSignIn = async () => {
+    setError(null);
+    setLoading(true);
+    const res = await login({ username: email, password });
+    setLoading(false);
+    if (res && res.ok) {
+      navigation.reset({ index: 0, routes: [{ name: "Main", params: { initialTab: "Home" } }] });
+    } else {
+      setError(res && res.error ? res.error : 'Login failed');
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={{ height: 50 }} />
@@ -17,13 +37,16 @@ function LoginScreen({ navigation }) {
       </View>
       <View style={styles.form}>
         <Text style={styles.label}>Email</Text>
-        <TextInput style={styles.textInputZone} placeholder="test@mail.com" />
+        <TextInput style={styles.textInputZone} placeholder="test@mail.com" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
         <Text style={styles.label}>Password</Text>
         <TextInput
           style={styles.textInputZone}
           placeholder="● ● ● ●"
           secureTextEntry
+          value={password}
+          onChangeText={setPassword}
         />
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
         <View style={styles.navigation}>
           <TouchableOpacity onPress={() => {}}>
             <Text style={styles.forgot}>Forgot Password?</Text>
@@ -33,16 +56,8 @@ function LoginScreen({ navigation }) {
           </TouchableOpacity>
         </View>
       </View>
-      <TouchableOpacity
-        onPress={() =>
-          navigation.reset({
-            index: 0,
-            routes: [{ name: "Main", params: { initialTab: "Home" } }],
-          })
-        }
-        style={[styles.button]}
-      >
-        <Text style={[styles.buttonText]}>Sign In</Text>
+      <TouchableOpacity onPress={handleSignIn} style={[styles.button]} disabled={loading || authLoading}>
+        {loading || authLoading ? <ActivityIndicator /> : <Text style={[styles.buttonText]}>Sign In</Text>}
       </TouchableOpacity>
     </View>
   );
@@ -105,4 +120,5 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   buttonText: { fontSize: 16, fontWeight: "600" },
+  errorText: { color: 'red', marginTop: 8 },
 });

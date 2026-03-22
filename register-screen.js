@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useContext } from "react";
 import {
   View,
   Text,
@@ -7,35 +7,48 @@ import {
   StyleSheet,
   Alert,
 } from "react-native";
-import { useProfile } from "./profile-context";
+import { AuthContext } from "./contexts/AuthContext";
+import { ActivityIndicator } from "react-native";
 
 const RegisterScreen = ({ navigation }) => {
-  const { setProfile } = useProfile();
+  const { register } = useContext(AuthContext);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   function handleCreate() {
+    setError(null);
     if (!name || !email) {
-      Alert.alert("Register", "Please enter name and email.");
+      setError("Name and email are required");
       return;
     }
-    if (password && password !== confirm) {
-      Alert.alert("Register", "Passwords do not match.");
+    if (!password) {
+      setError("Password is required");
+      return;
+    }
+    if (password !== confirm) {
+      setError("Passwords do not match");
       return;
     }
 
-    setProfile((prev) => ({
-      ...prev,
-      name: name || prev.name,
-      email: email || prev.email,
-    }));
-
-    navigation.reset({
-      index: 0,
-      routes: [{ name: "Main", params: { initialTab: "Profile" } }],
-    });
+    (async () => {
+      setLoading(true);
+      // Use email as username
+      const profile = { username: email, email, name, password };
+      const res = await register(profile);
+      setLoading(false);
+      if (res && res.ok) {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "Main", params: { initialTab: "Profile" } }],
+        });
+      } else {
+        setError(res && res.error ? res.error : "Register failed");
+      }
+    })();
   }
 
   return (
@@ -74,9 +87,18 @@ const RegisterScreen = ({ navigation }) => {
           value={confirm}
           onChangeText={setConfirm}
         />
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </View>
-      <TouchableOpacity onPress={handleCreate} style={[styles.button]}>
-        <Text style={styles.buttonText}>Create</Text>
+      <TouchableOpacity
+        onPress={handleCreate}
+        style={[styles.button]}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator />
+        ) : (
+          <Text style={styles.buttonText}>Create</Text>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -128,6 +150,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
+  errorText: { color: "red", marginTop: 8 },
 });
 
 export default RegisterScreen;
