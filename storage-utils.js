@@ -86,6 +86,9 @@ export async function getProfile() {
  */
 export async function saveProfile(profile) {
   try {
+    // Save or overwrite a profile (no duplicate-email check).
+    // This function only persists the profile; use `registerProfile`
+    // when you want duplicate-email validation + auto-login.
     if (!profile || !profile.email || !profile.password) {
       return { ok: false, error: "Email and password are required" };
     }
@@ -93,7 +96,31 @@ export async function saveProfile(profile) {
       return { ok: false, error: "Password must be at least 4 characters" };
     }
 
-    // basic email format check (optional)
+    if (profile.email && !/^\S+@\S+\.\S+$/.test(profile.email)) {
+      return { ok: false, error: "Invalid email format" };
+    }
+
+    await AsyncStorage.setItem(KEYS.PROFILE, JSON.stringify(profile));
+    return { ok: true };
+  } catch (e) {
+    console.error("saveProfile error", e);
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Register a new profile: performs duplicate-email check and auto-logs in.
+ * Returns {ok:true,user} on success, or {ok:false,error} on failure.
+ */
+export async function registerProfile(profile) {
+  try {
+    if (!profile || !profile.email || !profile.password) {
+      return { ok: false, error: "Email and password are required" };
+    }
+    if (typeof profile.password === "string" && profile.password.length < 4) {
+      return { ok: false, error: "Password must be at least 4 characters" };
+    }
+
     if (profile.email && !/^\S+@\S+\.\S+$/.test(profile.email)) {
       return { ok: false, error: "Invalid email format" };
     }
@@ -123,7 +150,7 @@ export async function saveProfile(profile) {
     await AsyncStorage.setItem(KEYS.USER, JSON.stringify(user));
     return { ok: true, user };
   } catch (e) {
-    console.error("saveProfile error", e);
+    console.error("registerProfile error", e);
     return { ok: false, error: e.message };
   }
 }
@@ -187,6 +214,7 @@ export default {
   loadUser,
   getProfile,
   saveProfile,
+  registerProfile,
   getPosts,
   savePost,
   clearUser,

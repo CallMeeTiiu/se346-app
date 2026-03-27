@@ -2,7 +2,7 @@ import React, { createContext, useEffect, useState } from "react";
 import {
   loadUser,
   loginCheck,
-  saveProfile,
+  registerProfile,
   logout as storageLogout,
 } from "../storage-utils";
 
@@ -36,10 +36,9 @@ export function AuthProvider({ children }) {
 
   async function register(profile) {
     setLoading(true);
-    const res = await saveProfile(profile);
+    const res = await registerProfile(profile);
     if (res && res.ok) {
-      const u = await loadUser();
-      setUser(u);
+      setUser(res.user);
     }
     setLoading(false);
     return res;

@@ -1,5 +1,5 @@
 import { sampleProfile, samplePosts } from "./seed-data";
-import { saveProfile, savePost, clearAll } from "../storage-utils";
+import { registerProfile, savePost, clearAll } from "../storage-utils";
 
 /** Apply seed data into AsyncStorage via storage-utils.
  * This is dev-only: clear posts/profile then write known demo data in the
@@ -17,8 +17,8 @@ export async function applySeed() {
     ? sampleProfile[0]
     : sampleProfile;
 
-  // ensure profile saved first (saveProfile will also set current user)
-  await saveProfile(profileObj);
+  // ensure profile saved first (registerProfile will set current user)
+  await registerProfile(profileObj);
 
   // write posts transformed to include `author`, `avatar`, `time`, `title`, `body`
   for (const p of samplePosts) {
