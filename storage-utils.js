@@ -1,31 +1,214 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+// Use native SQLite when available; otherwise use an in-memory JS-backed store
+let SQLite = null;
+let db = null;
+let nativeSqlite = false;
+let _initPromise = null;
+
+// in-memory storage structures used when native sqlite isn't available
+const _kv = new Map();
+const _profiles = []; // array of { id, email, name, password, json }
+const _posts = new Map(); // id -> json
+
+try {
+  // eslint-disable-next-line global-require
+  SQLite = require("react-native-sqlite-storage");
+  if (SQLite) {
+    SQLite.DEBUG(false);
+    db = SQLite.openDatabase(
+      { name: "app.db", location: "default" },
+      () => {},
+      (e) => {
+        console.warn("SQLite open error", e);
+      },
+    );
+    nativeSqlite = !!db;
+  }
+} catch (e) {
+  nativeSqlite = false;
+}
+
+async function initSqlite() {
+  // For native SQLite we run SQL; for in-memory we just ensure structures exist
+  if (nativeSqlite) {
+    try {
+      await execSql(
+        "CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)",
+      );
+      await execSql(
+        "CREATE TABLE IF NOT EXISTS profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE, name TEXT, password TEXT, json TEXT)",
+      );
+      await execSql(
+        "CREATE TABLE IF NOT EXISTS posts (id TEXT PRIMARY KEY, author_email TEXT, json TEXT)",
+      );
+    } catch (e) {
+      console.warn("initSqlite error", e);
+    }
+  }
+}
+
+function _makeRows(arr) {
+  return {
+    length: arr.length,
+    item(i) {
+      return arr[i];
+    },
+  };
+}
+
+function execSql(sql, params = []) {
+  if (nativeSqlite) {
+    return new Promise((resolve, reject) => {
+      try {
+        db.transaction(
+          (tx) => {
+            tx.executeSql(
+              sql,
+              params,
+              (_, res) => resolve(res),
+              (_, err) => {
+                reject(err);
+                return false;
+              },
+            );
+          },
+          (txErr) => reject(txErr),
+        );
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  // Simple in-memory SQL-like handling for the limited queries we use
+  const s = sql.trim().toUpperCase();
+  return new Promise((resolve) => {
+    if (
+      s.startsWith("REPLACE INTO KV") ||
+      s.startsWith("INSERT OR REPLACE INTO KV")
+    ) {
+      const key = params[0];
+      const value = params[1];
+      _kv.set(key, value);
+      resolve({ rows: _makeRows([]) });
+      return;
+    }
+    if (s.startsWith("SELECT VALUE FROM KV")) {
+      const key = params[0];
+      const val = _kv.has(key) ? _kv.get(key) : null;
+      const rows = val ? [{ value: val }] : [];
+      resolve({ rows: _makeRows(rows) });
+      return;
+    }
+    if (s.startsWith("DELETE FROM KV WHERE KEY =")) {
+      const key = params[0];
+      _kv.delete(key);
+      resolve({ rows: _makeRows([]) });
+      return;
+    }
+    if (s === "DELETE FROM KV") {
+      _kv.clear();
+      resolve({ rows: _makeRows([]) });
+      return;
+    }
+
+    if (
+      s.startsWith("REPLACE INTO PROFILES") ||
+      s.startsWith("INSERT INTO PROFILES")
+    ) {
+      const email = params[0];
+      const name = params[1];
+      const password = params[2];
+      const json = params[3];
+      // try to find existing by email
+      const idx = _profiles.findIndex((p) => p.email === email);
+      if (idx >= 0) {
+        _profiles[idx] = { ..._profiles[idx], email, name, password, json };
+      } else {
+        const id = _profiles.length
+          ? _profiles[_profiles.length - 1].id + 1
+          : 1;
+        _profiles.push({ id, email, name, password, json });
+      }
+      resolve({ rows: _makeRows([]) });
+      return;
+    }
+    if (s.startsWith("SELECT ID FROM PROFILES WHERE EMAIL")) {
+      const email = params[0];
+      const found = _profiles.find((p) => p.email === email);
+      const rows = found ? [{ id: found.id }] : [];
+      resolve({ rows: _makeRows(rows) });
+      return;
+    }
+    if (s.startsWith("SELECT JSON FROM PROFILES")) {
+      // return most recent
+      if (_profiles.length === 0) {
+        resolve({ rows: _makeRows([]) });
+        return;
+      }
+      const last = _profiles[_profiles.length - 1];
+      resolve({ rows: _makeRows([{ json: last.json }]) });
+      return;
+    }
+
+    if (
+      s.startsWith("REPLACE INTO POSTS") ||
+      s.startsWith("INSERT INTO POSTS")
+    ) {
+      const id = params[0];
+      const author_email = params[1];
+      const json = params[2];
+      _posts.set(id, json);
+      resolve({ rows: _makeRows([]) });
+      return;
+    }
+    if (s.startsWith("SELECT JSON FROM POSTS")) {
+      const arr = Array.from(_posts.values()).map((j) => ({ json: j }));
+      // ORDER BY rowid DESC -> reverse insertion order
+      const rows = arr.slice().reverse();
+      resolve({ rows: _makeRows(rows) });
+      return;
+    }
+    if (s === "DELETE FROM PROFILES") {
+      _profiles.length = 0;
+      resolve({ rows: _makeRows([]) });
+      return;
+    }
+    if (s === "DELETE FROM POSTS") {
+      _posts.clear();
+      resolve({ rows: _makeRows([]) });
+      return;
+    }
+
+    // default no-op
+    resolve({ rows: _makeRows([]) });
+  });
+}
+
+// ensure init runs once
+function ensureInit() {
+  if (!_initPromise) _initPromise = initSqlite();
+  return _initPromise;
+}
 
 const KEYS = {
-  USER: "user", // currently-logged-in basic info
-  PROFILE: "profile", // saved profile details (for demo/local)
-  POSTS: "posts", // array of saved posts
+  USER: "user",
+  PROFILE: "profile",
+  POSTS: "posts",
 };
 
-/**
- * Try to authenticate using locally-saved profile.
- * NOTE: This is a local/demo check. For real apps call your backend.
- * @param {{email:string,password:string}} creds
- * @returns {{ok:boolean,user?:object,error?:string}}
- */
 export async function loginCheck(creds) {
   try {
     if (!creds || !creds.email || !creds.password) {
       return { ok: false, error: "Email and password are required" };
     }
 
-    const profile = await getProfile();
-    if (!profile) return { ok: false, error: "No local profile found" };
+    // find profile by provided email instead of using the last-saved profile
+    const profile = await getProfileByEmail(creds.email);
+    if (!profile)
+      return { ok: false, error: "No local profile found for this email" };
 
-    // Simple direct comparison as requested
-    // Debug logging in dev to help trace form/storage mismatches
     if (__DEV__) {
       try {
-        // avoid printing passwords in logs; only indicate whether they match
         const pwMatch = profile.password === creds.password;
         console.debug(
           "[loginCheck] creds.email=",
@@ -46,7 +229,11 @@ export async function loginCheck(creds) {
         name: profile.name || "",
         loggedAt: Date.now(),
       };
-      await AsyncStorage.setItem(KEYS.USER, JSON.stringify(user));
+      await ensureInit();
+      await execSql("REPLACE INTO kv (key, value) VALUES (?, ?)", [
+        KEYS.USER,
+        JSON.stringify(user),
+      ]);
       return { ok: true, user };
     }
 
@@ -59,8 +246,15 @@ export async function loginCheck(creds) {
 
 export async function loadUser() {
   try {
-    const s = await AsyncStorage.getItem(KEYS.USER);
-    return s ? JSON.parse(s) : null;
+    await ensureInit();
+    const res = await execSql("SELECT value FROM kv WHERE key = ?", [
+      KEYS.USER,
+    ]);
+    if (res && res.rows && res.rows.length) {
+      const row = res.rows.item(0);
+      return row && row.value ? JSON.parse(row.value) : null;
+    }
+    return null;
   } catch (e) {
     console.error("loadUser error", e);
     return null;
@@ -69,38 +263,62 @@ export async function loadUser() {
 
 export async function getProfile() {
   try {
-    const s = await AsyncStorage.getItem(KEYS.PROFILE);
-    if (!s) return null;
-    const obj = JSON.parse(s);
-    if (Array.isArray(obj)) return obj[0] || null;
-    return obj;
+    await ensureInit();
+    const res = await execSql(
+      "SELECT json FROM profiles ORDER BY id DESC LIMIT 1",
+    );
+    if (res && res.rows && res.rows.length) {
+      const row = res.rows.item(0);
+      return row && row.json ? JSON.parse(row.json) : null;
+    }
+    return null;
   } catch (e) {
     console.error("getProfile error", e);
     return null;
   }
 }
 
-/**
- * Save profile locally. For demo purposes this stores password too — avoid this in production.
- * @param {object} profile
- */
+export async function getProfileByEmail(email) {
+  try {
+    if (!email) return null;
+    await ensureInit();
+    const res = await execSql(
+      "SELECT json FROM profiles WHERE email = ? LIMIT 1",
+      [email],
+    );
+    if (res && res.rows && res.rows.length) {
+      const row = res.rows.item(0);
+      return row && row.json ? JSON.parse(row.json) : null;
+    }
+    return null;
+  } catch (e) {
+    console.error("getProfileByEmail error", e);
+    return null;
+  }
+}
+
 export async function saveProfile(profile) {
   try {
-    // Save or overwrite a profile (no duplicate-email check).
-    // This function only persists the profile; use `registerProfile`
-    // when you want duplicate-email validation + auto-login.
     if (!profile || !profile.email || !profile.password) {
       return { ok: false, error: "Email and password are required" };
     }
     if (typeof profile.password === "string" && profile.password.length < 4) {
       return { ok: false, error: "Password must be at least 4 characters" };
     }
-
     if (profile.email && !/^\S+@\S+\.\S+$/.test(profile.email)) {
       return { ok: false, error: "Invalid email format" };
     }
 
-    await AsyncStorage.setItem(KEYS.PROFILE, JSON.stringify(profile));
+    await ensureInit();
+    await execSql(
+      "REPLACE INTO profiles (email, name, password, json) VALUES (?, ?, ?, ?)",
+      [
+        profile.email,
+        profile.name || "",
+        profile.password,
+        JSON.stringify(profile),
+      ],
+    );
     return { ok: true };
   } catch (e) {
     console.error("saveProfile error", e);
@@ -108,10 +326,6 @@ export async function saveProfile(profile) {
   }
 }
 
-/**
- * Register a new profile: performs duplicate-email check and auto-logs in.
- * Returns {ok:true,user} on success, or {ok:false,error} on failure.
- */
 export async function registerProfile(profile) {
   try {
     if (!profile || !profile.email || !profile.password) {
@@ -120,34 +334,27 @@ export async function registerProfile(profile) {
     if (typeof profile.password === "string" && profile.password.length < 4) {
       return { ok: false, error: "Password must be at least 4 characters" };
     }
-
     if (profile.email && !/^\S+@\S+\.\S+$/.test(profile.email)) {
       return { ok: false, error: "Invalid email format" };
     }
 
-    // handle existing stored profile (object or array)
-    const existingRaw = await AsyncStorage.getItem(KEYS.PROFILE);
-    if (existingRaw) {
-      try {
-        const existing = JSON.parse(existingRaw);
-        const existingEmail = Array.isArray(existing)
-          ? existing[0] && existing[0].email
-          : existing.email;
-        if (existingEmail && existingEmail === profile.email) {
-          return { ok: false, error: "Email already taken" };
-        }
-      } catch (e) {
-        // ignore parse errors
+    await ensureInit();
+    // check existing
+    try {
+      const check = await execSql("SELECT id FROM profiles WHERE email = ? LIMIT 1", [profile.email]);
+      if (check && check.rows && check.rows.length) {
+        return { ok: false, error: "Email already taken" };
       }
+    } catch (e) {
+      // ignore check errors
     }
 
-    await AsyncStorage.setItem(KEYS.PROFILE, JSON.stringify(profile));
-    const user = {
-      email: profile.email,
-      name: profile.name || "",
-      loggedAt: Date.now(),
-    };
-    await AsyncStorage.setItem(KEYS.USER, JSON.stringify(user));
+    await execSql(
+      "INSERT INTO profiles (email, name, password, json) VALUES (?, ?, ?, ?)",
+      [profile.email, profile.name || "", profile.password, JSON.stringify(profile)],
+    );
+    const user = { email: profile.email, name: profile.name || "", loggedAt: Date.now() };
+    await execSql("REPLACE INTO kv (key, value) VALUES (?, ?)", [KEYS.USER, JSON.stringify(user)]);
     return { ok: true, user };
   } catch (e) {
     console.error("registerProfile error", e);
@@ -157,26 +364,31 @@ export async function registerProfile(profile) {
 
 export async function getPosts() {
   try {
-    const s = await AsyncStorage.getItem(KEYS.POSTS);
-    return s ? JSON.parse(s) : [];
+    await ensureInit();
+    const res = await execSql("SELECT json FROM posts ORDER BY rowid DESC");
+    const out = [];
+    if (res && res.rows) {
+      for (let i = 0; i < res.rows.length; i++) {
+        const r = res.rows.item(i);
+        if (r && r.json) out.push(JSON.parse(r.json));
+      }
+    }
+    return out;
   } catch (e) {
     console.error("getPosts error", e);
     return [];
   }
 }
 
-/**
- * Save a single post (appends to local list). Post should be an object; an `id` will be added if missing.
- * @param {object} post
- */
 export async function savePost(post) {
   try {
-    const list = await getPosts();
     const newPost = { id: post.id || Date.now().toString(), ...post };
-    // remove any existing post with same id to avoid duplicate keys
-    const filtered = list.filter((p) => p.id !== newPost.id);
-    filtered.unshift(newPost);
-    await AsyncStorage.setItem(KEYS.POSTS, JSON.stringify(filtered));
+    await ensureInit();
+    await execSql("REPLACE INTO posts (id, author_email, json) VALUES (?, ?, ?)", [
+      newPost.id,
+      post.author_email || "",
+      JSON.stringify(newPost),
+    ]);
     return newPost;
   } catch (e) {
     console.error("savePost error", e);
@@ -186,7 +398,8 @@ export async function savePost(post) {
 
 export async function clearUser() {
   try {
-    await AsyncStorage.removeItem(KEYS.USER);
+    await ensureInit();
+    await execSql("DELETE FROM kv WHERE key = ?", [KEYS.USER]);
   } catch (e) {
     console.error("clearUser error", e);
   }
@@ -194,8 +407,8 @@ export async function clearUser() {
 
 export async function logout() {
   try {
-    await AsyncStorage.removeItem(KEYS.USER);
-    // optionally keep profile and posts; if you want full clear use clearAll()
+    await ensureInit();
+    await execSql("DELETE FROM kv WHERE key = ?", [KEYS.USER]);
   } catch (e) {
     console.error("logout error", e);
   }
@@ -203,7 +416,10 @@ export async function logout() {
 
 export async function clearAll() {
   try {
-    await AsyncStorage.multiRemove(Object.values(KEYS));
+    await ensureInit();
+    await execSql("DELETE FROM kv");
+    await execSql("DELETE FROM profiles");
+    await execSql("DELETE FROM posts");
   } catch (e) {
     console.error("clearAll error", e);
   }

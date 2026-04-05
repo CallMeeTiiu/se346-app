@@ -5,36 +5,34 @@ import React, {
   useEffect,
   useCallback,
 } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getProfile, saveProfile } from "./storage-utils";
+import { getProfileByEmail, saveProfile } from "./storage-utils";
+import { AuthContext } from "./contexts/AuthContext";
 
 const ProfileContext = createContext(null);
 
 export function ProfileProvider({ children }) {
   const [profile, setProfileState] = useState(null);
   const [hydrated, setHydrated] = useState(false);
+  const { user } = useContext(AuthContext);
 
   useEffect(() => {
     (async () => {
-      const p = await getProfile();
-      if (p) setProfileState(p);
-      else setProfileState(null);
+      if (user && user.email) {
+        const p = await getProfileByEmail(user.email);
+        if (p) setProfileState(p);
+        else setProfileState(null);
+      } else {
+        setProfileState(null);
+      }
       setHydrated(true);
     })();
-  }, []);
+  }, [user]);
 
   const setProfile = useCallback(
     async (next) => {
       // if caller passes a function, emulate useState functional update
       const newProfile = typeof next === "function" ? next(profile) : next;
       if (newProfile === null) {
-        // clear stored profile and current user
-        try {
-          await AsyncStorage.removeItem("profile");
-          await AsyncStorage.removeItem("user");
-        } catch (e) {
-          console.error("profile-context clear error", e);
-        }
         setProfileState(null);
         return;
       }

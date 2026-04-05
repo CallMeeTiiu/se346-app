@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
@@ -6,22 +6,37 @@ import LoginScreen from "./login-screen";
 import RegisterScreen from "./register-screen";
 import MainTabs from "./main-tabs";
 import { ProfileProvider } from "./profile-context";
-import { AuthProvider } from "./contexts/AuthContext";
+import { AuthProvider, AuthContext } from "./contexts/AuthContext";
 import { PostsProvider } from "./contexts/PostsContext";
 import { applySeed } from "./seeds/seedLoader";
 import { getProfile } from "./storage-utils";
 
 const Stack = createNativeStackNavigator();
 
+function AppNavigator() {
+  const { user, loading } = useContext(AuthContext);
+
+  if (loading) return null;
+
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {user ? (
+        <Stack.Screen name="Main" component={MainTabs} />
+      ) : (
+        <>
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Register" component={RegisterScreen} />
+        </>
+      )}
+    </Stack.Navigator>
+  );
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     (async () => {
-      if (!__DEV__) {
-        setReady(true);
-        return;
-      }
       try {
         const p = await getProfile();
         if (!p) {
@@ -42,11 +57,7 @@ export default function App() {
       <PostsProvider>
         <ProfileProvider>
           <NavigationContainer>
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="Login" component={LoginScreen} />
-              <Stack.Screen name="Register" component={RegisterScreen} />
-              <Stack.Screen name="Main" component={MainTabs} />
-            </Stack.Navigator>
+            <AppNavigator />
           </NavigationContainer>
         </ProfileProvider>
       </PostsProvider>

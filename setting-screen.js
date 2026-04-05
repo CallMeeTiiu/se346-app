@@ -1,9 +1,12 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
 import { useProfile } from "./profile-context";
+import { useContext } from "react";
+import { AuthContext } from "./contexts/AuthContext";
 
 export default function SettingScreen({ navigation }) {
   const { setProfile } = useProfile();
+  const { logout: authLogout } = useContext(AuthContext);
 
   function handleLogout() {
     Alert.alert("Logout", "Are you sure you want to logout?", [
@@ -11,9 +14,13 @@ export default function SettingScreen({ navigation }) {
       {
         text: "Logout",
         style: "destructive",
-        onPress: () => {
+        onPress: async () => {
+          try {
+            if (authLogout) await authLogout();
+          } catch (e) {
+            console.error("auth logout error", e);
+          }
           setProfile(null);
-          navigation.reset({ index: 0, routes: [{ name: "Login" }] });
         },
       },
     ]);

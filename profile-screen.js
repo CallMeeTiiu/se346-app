@@ -23,10 +23,7 @@ export default function ProfileScreen({ navigation }) {
   }
 
   useEffect(() => {
-    // protect this screen: wait for profile hydration first
-    if (hydrated && (!profile || !profile.email)) {
-      navigation.replace("Login");
-    }
+    // No manual routing needed, App.js handles Auth state
   }, [profile]);
 
   if (!profile) return null;

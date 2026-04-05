@@ -72,6 +72,7 @@ export default function HomeScreen() {
             authorName,
           )}&background=ffffff&color=666&rounded=true&size=128`;
     const newPost = {
+      author_email: user?.email || "anonymous",
       author: authorName,
       avatar: avatarUrl,
       title,

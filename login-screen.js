@@ -23,10 +23,7 @@ function LoginScreen({ navigation }) {
     const res = await login({ email: email.trim(), password });
     setLoading(false);
     if (res && res.ok) {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "Main", params: { initialTab: "Home" } }],
-      });
+      // Stack switch will happen automatically via App.js
     } else {
       setError(res && res.error ? res.error : "Login failed");
     }

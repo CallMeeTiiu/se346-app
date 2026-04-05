@@ -45,10 +45,7 @@ const RegisterScreen = ({ navigation }) => {
       const res = await register(profile);
       setLoading(false);
       if (res && res.ok) {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: "Main", params: { initialTab: "Profile" } }],
-        });
+        // Automatically handled by Stack navigation logic in App.js when user state updates
       } else {
         setError(res && res.error ? res.error : "Register failed");
       }
