@@ -341,7 +341,10 @@ export async function registerProfile(profile) {
     await ensureInit();
     // check existing
     try {
-      const check = await execSql("SELECT id FROM profiles WHERE email = ? LIMIT 1", [profile.email]);
+      const check = await execSql(
+        "SELECT id FROM profiles WHERE email = ? LIMIT 1",
+        [profile.email],
+      );
       if (check && check.rows && check.rows.length) {
         return { ok: false, error: "Email already taken" };
       }
@@ -351,10 +354,22 @@ export async function registerProfile(profile) {
 
     await execSql(
       "INSERT INTO profiles (email, name, password, json) VALUES (?, ?, ?, ?)",
-      [profile.email, profile.name || "", profile.password, JSON.stringify(profile)],
+      [
+        profile.email,
+        profile.name || "",
+        profile.password,
+        JSON.stringify(profile),
+      ],
     );
-    const user = { email: profile.email, name: profile.name || "", loggedAt: Date.now() };
-    await execSql("REPLACE INTO kv (key, value) VALUES (?, ?)", [KEYS.USER, JSON.stringify(user)]);
+    const user = {
+      email: profile.email,
+      name: profile.name || "",
+      loggedAt: Date.now(),
+    };
+    await execSql("REPLACE INTO kv (key, value) VALUES (?, ?)", [
+      KEYS.USER,
+      JSON.stringify(user),
+    ]);
     return { ok: true, user };
   } catch (e) {
     console.error("registerProfile error", e);
@@ -384,11 +399,10 @@ export async function savePost(post) {
   try {
     const newPost = { id: post.id || Date.now().toString(), ...post };
     await ensureInit();
-    await execSql("REPLACE INTO posts (id, author_email, json) VALUES (?, ?, ?)", [
-      newPost.id,
-      post.author_email || "",
-      JSON.stringify(newPost),
-    ]);
+    await execSql(
+      "REPLACE INTO posts (id, author_email, json) VALUES (?, ?, ?)",
+      [newPost.id, post.author_email || "", JSON.stringify(newPost)],
+    );
     return newPost;
   } catch (e) {
     console.error("savePost error", e);
