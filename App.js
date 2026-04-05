@@ -38,12 +38,9 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const p = await getProfile();
-        if (!p) {
-          await applySeed();
-        }
+        // App will just open. If there is a session, it handles itself.
       } catch (e) {
-        console.warn("applySeed error", e);
+        console.warn("App init error", e);
       } finally {
         setReady(true);
       }

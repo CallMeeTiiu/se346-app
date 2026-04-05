@@ -10,21 +10,52 @@ const _profiles = []; // array of { id, email, name, password, json }
 const _posts = new Map(); // id -> json
 
 try {
-  // eslint-disable-next-line global-require
-  SQLite = require("react-native-sqlite-storage");
-  if (SQLite) {
-    SQLite.DEBUG(false);
-    db = SQLite.openDatabase(
-      { name: "app.db", location: "default" },
-      () => {},
-      (e) => {
-        console.warn("SQLite open error", e);
+  // Try expo-sqlite first for standard Expo Go support
+  const ExpoSQLite = require("expo-sqlite");
+  if (ExpoSQLite && ExpoSQLite.openDatabaseSync) {
+    db = {
+      transaction: (cb, errorCb) => {
+        try {
+          const theDb = ExpoSQLite.openDatabaseSync("app.db");
+          cb({
+            executeSql: (sql, params, successCb, failCb) => {
+              try {
+                if (sql.trim().toUpperCase().startsWith("SELECT")) {
+                  const results = theDb.getAllSync(sql, ...(params || []));
+                  successCb?.(null, { rows: _makeRows(results || []) });
+                } else {
+                  const results = theDb.runSync(sql, ...(params || []));
+                  successCb?.(null, { rows: _makeRows([]) });
+                }
+              } catch (err) {
+                failCb?.(null, err);
+              }
+            },
+          });
+        } catch (e) {
+          errorCb?.(e);
+        }
       },
-    );
-    nativeSqlite = !!db;
+    };
+    nativeSqlite = true;
+  } else {
+    // legacy API or fallback
+    SQLite = require("react-native-sqlite-storage");
+    if (SQLite) {
+      SQLite.DEBUG(false);
+      db = SQLite.openDatabase(
+        { name: "app.db", location: "default" },
+        () => {},
+        (e) => {
+          console.warn("SQLite open error", e);
+        },
+      );
+      nativeSqlite = !!db;
+    }
   }
 } catch (e) {
   nativeSqlite = false;
+  console.warn("No native SQLite found, falling back to memory");
 }
 
 async function initSqlite() {
@@ -136,6 +167,13 @@ function execSql(sql, params = []) {
       const email = params[0];
       const found = _profiles.find((p) => p.email === email);
       const rows = found ? [{ id: found.id }] : [];
+      resolve({ rows: _makeRows(rows) });
+      return;
+    }
+    if (s.startsWith("SELECT JSON FROM PROFILES WHERE EMAIL")) {
+      const email = params[0];
+      const found = _profiles.find((p) => p.email === email);
+      const rows = found ? [{ json: found.json }] : [];
       resolve({ rows: _makeRows(rows) });
       return;
     }
