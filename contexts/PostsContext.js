@@ -1,11 +1,16 @@
 import React, { createContext, useEffect, useState } from "react";
-import { getPosts, savePost } from "../storage-utils";
+import {
+  getPosts,
+  savePost,
+  deletePost as storageDeletePost,
+} from "../storage-utils";
 
 export const PostsContext = createContext({
   posts: [],
   loading: true,
   refresh: async () => {},
   addPost: async () => {},
+  removePost: async () => {},
 });
 
 export function PostsProvider({ children }) {
@@ -25,12 +30,22 @@ export function PostsProvider({ children }) {
     return saved;
   }
 
+  async function removePost(postId) {
+    const success = await storageDeletePost(postId);
+    if (success) {
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+    }
+    return success;
+  }
+
   useEffect(() => {
     refresh();
   }, []);
 
   return (
-    <PostsContext.Provider value={{ posts, loading, refresh, addPost }}>
+    <PostsContext.Provider
+      value={{ posts, loading, refresh, addPost, removePost }}
+    >
       {children}
     </PostsContext.Provider>
   );

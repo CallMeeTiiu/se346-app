@@ -240,42 +240,30 @@ export async function loginCheck(creds) {
       return { ok: false, error: "Email and password are required" };
     }
 
-    // find profile by provided email instead of using the last-saved profile
-    const profile = await getProfileByEmail(creds.email);
-    if (!profile)
-      return { ok: false, error: "No local profile found for this email" };
+    const res = await fetch(
+      `http://blackntt.net:4321/login?email=${encodeURIComponent(creds.email)}&password=${encodeURIComponent(creds.password)}`,
+      {
+        method: "POST",
+      },
+    );
 
-    if (__DEV__) {
-      try {
-        const pwMatch = profile.password === creds.password;
-        console.debug(
-          "[loginCheck] creds.email=",
-          creds.email,
-          "stored=",
-          profile.email,
-          "pwMatch=",
-          pwMatch,
-        );
-      } catch (e) {
-        console.debug("[loginCheck] debug error", e);
-      }
+    if (!res.ok) {
+      return { ok: false, error: "Invalid credentials" };
     }
 
-    if (creds.email === profile.email && creds.password === profile.password) {
-      const user = {
-        email: profile.email,
-        name: profile.name || "",
-        loggedAt: Date.now(),
-      };
-      await ensureInit();
-      await execSql("REPLACE INTO kv (key, value) VALUES (?, ?)", [
-        KEYS.USER,
-        JSON.stringify(user),
-      ]);
-      return { ok: true, user };
-    }
+    const data = await res.json();
 
-    return { ok: false, error: "Invalid credentials" };
+    const user = {
+      email: creds.email,
+      name: data.name || "",
+      loggedAt: Date.now(),
+    };
+    await ensureInit();
+    await execSql("REPLACE INTO kv (key, value) VALUES (?, ?)", [
+      KEYS.USER,
+      JSON.stringify(user),
+    ]);
+    return { ok: true, user };
   } catch (e) {
     console.error("loginCheck error", e);
     return { ok: false, error: e.message };
@@ -319,14 +307,17 @@ export async function getProfile() {
 export async function getProfileByEmail(email) {
   try {
     if (!email) return null;
-    await ensureInit();
-    const res = await execSql(
-      "SELECT json FROM profiles WHERE email = ? LIMIT 1",
-      [email],
+    const res = await fetch(
+      `http://blackntt.net:4321/profile/${encodeURIComponent(email)}`,
     );
-    if (res && res.rows && res.rows.length) {
-      const row = res.rows.item(0);
-      return row && row.json ? JSON.parse(row.json) : null;
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        email: data.email,
+        name: data.name,
+        description: data.description,
+        avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || "User")}&background=ffffff&color=666&rounded=true&size=128`,
+      };
     }
     return null;
   } catch (e) {
@@ -337,26 +328,28 @@ export async function getProfileByEmail(email) {
 
 export async function saveProfile(profile) {
   try {
-    if (!profile || !profile.email || !profile.password) {
-      return { ok: false, error: "Email and password are required" };
-    }
-    if (typeof profile.password === "string" && profile.password.length < 4) {
-      return { ok: false, error: "Password must be at least 4 characters" };
-    }
-    if (profile.email && !/^\S+@\S+\.\S+$/.test(profile.email)) {
-      return { ok: false, error: "Invalid email format" };
+    if (!profile || !profile.email) {
+      return { ok: false, error: "Email is required" };
     }
 
-    await ensureInit();
-    await execSql(
-      "REPLACE INTO profiles (email, name, password, json) VALUES (?, ?, ?, ?)",
-      [
-        profile.email,
-        profile.name || "",
-        profile.password,
-        JSON.stringify(profile),
-      ],
+    const res = await fetch(
+      `http://blackntt.net:4321/profile/${encodeURIComponent(profile.email)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: profile.name || "",
+          description: profile.description || "",
+          avatarUrl: profile.avatarUrl || "",
+          address: profile.address || "",
+        }),
+      },
     );
+
+    if (!res.ok) {
+      return { ok: false, error: "Failed to update profile" };
+    }
+
     return { ok: true };
   } catch (e) {
     console.error("saveProfile error", e);
@@ -376,29 +369,22 @@ export async function registerProfile(profile) {
       return { ok: false, error: "Invalid email format" };
     }
 
-    await ensureInit();
-    // check existing
-    try {
-      const check = await execSql(
-        "SELECT id FROM profiles WHERE email = ? LIMIT 1",
-        [profile.email],
-      );
-      if (check && check.rows && check.rows.length) {
-        return { ok: false, error: "Email already taken" };
-      }
-    } catch (e) {
-      // ignore check errors
+    const res = await fetch("http://blackntt.net:4321/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: profile.email,
+        password: profile.password,
+        name: profile.name || "",
+        description: profile.description || "Testing User",
+      }),
+    });
+
+    if (!res.ok) {
+      return { ok: false, error: "Failed to register or email already taken" };
     }
 
-    await execSql(
-      "INSERT INTO profiles (email, name, password, json) VALUES (?, ?, ?, ?)",
-      [
-        profile.email,
-        profile.name || "",
-        profile.password,
-        JSON.stringify(profile),
-      ],
-    );
+    await ensureInit();
     const user = {
       email: profile.email,
       name: profile.name || "",
@@ -417,16 +403,19 @@ export async function registerProfile(profile) {
 
 export async function getPosts() {
   try {
-    await ensureInit();
-    const res = await execSql("SELECT json FROM posts ORDER BY rowid DESC");
-    const out = [];
-    if (res && res.rows) {
-      for (let i = 0; i < res.rows.length; i++) {
-        const r = res.rows.item(i);
-        if (r && r.json) out.push(JSON.parse(r.json));
-      }
-    }
-    return out;
+    const res = await fetch("http://blackntt.net:4321/posts");
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    return data.map((p) => ({
+      id: String(p.id),
+      author_email: p.creator_email,
+      author: p.creator_email || "Anonymous",
+      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(p.creator_email || "User")}&background=ffffff&color=666&rounded=true&size=128`,
+      title: p.title,
+      body: p.description,
+      time: new Date(p.created_at || Date.now()).getTime(),
+    }));
   } catch (e) {
     console.error("getPosts error", e);
     return [];
@@ -435,16 +424,42 @@ export async function getPosts() {
 
 export async function savePost(post) {
   try {
-    const newPost = { id: post.id || Date.now().toString(), ...post };
-    await ensureInit();
-    await execSql(
-      "REPLACE INTO posts (id, author_email, json) VALUES (?, ?, ?)",
-      [newPost.id, post.author_email || "", JSON.stringify(newPost)],
-    );
-    return newPost;
+    const res = await fetch("http://blackntt.net:4321/posts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: post.title || "Untitled",
+        description: post.body || "",
+        creator_email: post.author_email || "anonymous",
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return {
+      id: String(data.id),
+      author_email: data.creator_email,
+      author: data.creator_email || "Anonymous",
+      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(data.creator_email || "User")}&background=ffffff&color=666&rounded=true&size=128`,
+      title: data.title,
+      body: data.description,
+      time: new Date(data.created_at || Date.now()).getTime(),
+    };
   } catch (e) {
     console.error("savePost error", e);
     return null;
+  }
+}
+
+export async function deletePost(postId) {
+  try {
+    if (!postId) return false;
+    const res = await fetch(`http://blackntt.net:4321/posts/${postId}`, {
+      method: "DELETE",
+    });
+    return res.ok;
+  } catch (e) {
+    console.error("deletePost error", e);
+    return false;
   }
 }
 
@@ -482,9 +497,11 @@ export default {
   loadUser,
   getProfile,
   saveProfile,
+  getProfileByEmail,
   registerProfile,
   getPosts,
   savePost,
+  deletePost,
   clearUser,
   logout,
   clearAll,

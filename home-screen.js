@@ -32,12 +32,13 @@ import { AuthContext } from "./contexts/AuthContext";
 import { useProfile } from "./profile-context";
 
 export default function HomeScreen() {
-  const { posts, loading, addPost } = useContext(PostsContext);
+  const { posts, loading, addPost, removePost } = useContext(PostsContext);
   const { user } = useContext(AuthContext);
   const { profile } = useProfile();
   // local modal state only
 
   const [modalVisible, setModalVisible] = useState(false);
+  const [actionPost, setActionPost] = useState(null);
   const [postTitle, setPostTitle] = useState("");
   const [postBody, setPostBody] = useState("");
 
@@ -85,6 +86,29 @@ export default function HomeScreen() {
     setModalVisible(false);
   }
 
+  async function handleDeletePost(item) {
+    if (!user || user.email !== item.author_email) {
+      Alert.alert("Lỗi", "Bạn không thể xóa bài của người khác");
+      return;
+    }
+
+    Alert.alert("Xác nhận", "Bạn có chắc muốn xóa bài viết này không?", [
+      { text: "Hủy", style: "cancel" },
+      {
+        text: "Xóa",
+        style: "destructive",
+        onPress: async () => {
+          const success = await removePost(item.id);
+          if (success) {
+            Alert.alert("Thành công", "Đã xóa bài viết");
+          } else {
+            Alert.alert("Lỗi", "Không thể xóa bài viết. Vui lòng thử lại.");
+          }
+        },
+      },
+    ]);
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.header}>Home</Text>
@@ -108,8 +132,22 @@ export default function HomeScreen() {
             })()}
             <View style={styles.postBody}>
               <View style={styles.metaRow}>
-                <Text style={styles.author}>{item.author}</Text>
-                <Text style={styles.time}>{timeAgo(item.time)}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text style={styles.author}>{item.author}</Text>
+                  <Text style={[styles.time, { marginLeft: 8 }]}>
+                    {timeAgo(item.time)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setActionPost(item)}
+                  style={{ padding: 4 }}
+                >
+                  <Text
+                    style={{ fontSize: 16, fontWeight: "bold", color: "#999" }}
+                  >
+                    ⋮
+                  </Text>
+                </TouchableOpacity>
               </View>
               {item.title ? (
                 <Text style={[styles.content, { fontWeight: "700" }]}>
@@ -159,6 +197,60 @@ export default function HomeScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      <Modal
+        visible={!!actionPost}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setActionPost(null)}
+      >
+        <TouchableOpacity
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.4)",
+            justifyContent: "flex-end",
+          }}
+          activeOpacity={1}
+          onPress={() => setActionPost(null)}
+        >
+          <View
+            style={{
+              backgroundColor: "#fff",
+              padding: 20,
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+            }}
+          >
+            <TouchableOpacity
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                paddingVertical: 16,
+              }}
+              onPress={() => {
+                const post = actionPost;
+                setActionPost(null);
+                handleDeletePost(post);
+              }}
+            >
+              <Text style={{ fontSize: 20, marginRight: 12 }}>🗑️</Text>
+              <Text style={{ color: "red", fontSize: 18, fontWeight: "600" }}>
+                Xóa bài
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{
+                paddingVertical: 16,
+                alignItems: "center",
+                marginTop: 8,
+              }}
+              onPress={() => setActionPost(null)}
+            >
+              <Text style={{ fontSize: 18, color: "#666" }}>Hủy</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
       </Modal>
 
       <TouchableOpacity
